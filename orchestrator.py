@@ -1,3 +1,4 @@
+import re
 import queue
 import time
 
@@ -31,6 +32,12 @@ PROVIDER_LABELS = {
     "openrouter": "OpenRouter (Cesitli)",
 }
 
+# Persona cevabinin sonuna eklenen, kullaniciya gosterilmeyen yapilandirilmis blok.
+# Bu sayede ekstra bir API cagrisi yapmadan (ayni cevabin icinde) Issue/Decision
+# takibi yapabiliyoruz.
+META_BLOCK_MARKER = "---META---"
+META_LINE_RE = re.compile(r"^(ACIK|AÇIK|COZULDU|ÇÖZÜLDÜ|KARAR)\s*:\s*(.*)$", re.IGNORECASE)
+
 
 class DiscussionWorker(QThread):
     message_ready = pyqtSignal(dict)
@@ -53,15 +60,30 @@ class DiscussionWorker(QThread):
         self.is_paused = False
         self.transcript = []
 
+        # --- Issue / Decision takibi ---
+        # Ham transkripti tekrar tekrar modele gondermek yerine, her turda
+        # acilan/kapanan konularin ve alinan kararlarin kucuk, yapilandirilmis
+        # bir ozetini tutuyoruz. Prompt boyutu artik tur sayisiyla katlanarak
+        # buyumuyor.
+        self.issues = []      # [{id, baslik, durum, acan, tur}]
+        self.decisions = []   # [{id, ozet, tur}]
+        self._issue_counter = 0
+        self._decision_counter = 0
+
     def run(self):
         try:
             self.status.emit("Tartışma başlatılıyor...")
-            history_context = []
 
             for r in range(1, self.rounds + 1):
                 if not self.is_running:
                     break
                 self.status.emit(f"Tur {r} yürütülüyor...")
+
+                # Sadece bu turun konusmalarini tutan, her turda sifirlanan baglam.
+                # Kalici bilgi (issues/decisions) ayri tutuldugu icin bunu
+                # tur boyunca biriktirmek yeterli; onceki turlarin ham metnini
+                # tekrar gondermiyoruz.
+                round_context = []
 
                 for p in self.personas:
                     if not self.is_running:
@@ -72,20 +94,23 @@ class DiscussionWorker(QThread):
                         entry = {"speaker": "Sen", "round": r, "text": u_msg}
                         self.transcript.append(entry)
                         self.message_ready.emit(entry)
-                        history_context.append(f"Sen (Kullanıcı): {u_msg}")
+                        round_context.append(f"Sen (Kullanıcı): {u_msg}")
 
-                    resp_text = self.call_llm(p, history_context, r)
+                    raw_resp = self.call_llm(p, round_context, r)
+                    clean_text, meta = self._parse_meta_block(raw_resp)
+                    self._apply_meta(meta, p["name"], r)
+
                     model_used = p.get("model") or DEFAULT_MODELS.get(p["provider"], p["provider"])
                     entry = {
                         "speaker": p["name"],
                         "round": r,
-                        "text": resp_text,
+                        "text": clean_text,
                         "provider": p["provider"],
                         "model": model_used,
                     }
                     self.transcript.append(entry)
                     self.message_ready.emit(entry)
-                    history_context.append(f"{p['name']} ({p['role']}): {resp_text}")
+                    round_context.append(f"{p['name']} ({p['role']}): {clean_text}")
 
                 if not self.is_running:
                     break
@@ -103,11 +128,10 @@ class DiscussionWorker(QThread):
                 entry = {"speaker": "Sen", "round": 0, "text": u_msg}
                 self.transcript.append(entry)
                 self.message_ready.emit(entry)
-                history_context.append(f"Sen (Kullanıcı): {u_msg}")
 
             self.status.emit("Nihai özet ve plan raporu hazırlanıyor...")
             summary, used_prov, used_model = self.synthesize(
-                history_context, provider=self.summary_provider, model=self.summary_model
+                provider=self.summary_provider, model=self.summary_model
             )
             source_label = f"{PROVIDER_LABELS.get(used_prov, used_prov)} · {used_model}"
             self.finished_all.emit(summary, self.transcript, source_label)
@@ -122,14 +146,80 @@ class DiscussionWorker(QThread):
         self.is_paused = False
 
     def generate_summary_only(self, provider=None, model=None):
-        history_context = []
-        for entry in self.transcript:
-            history_context.append(f"{entry['speaker']}: {entry['text']}")
         provider = provider or self.summary_provider
         model = model or self.summary_model
-        summary, used_prov, used_model = self.synthesize(history_context, provider=provider, model=model)
+        summary, used_prov, used_model = self.synthesize(provider=provider, model=model)
         source_label = f"{PROVIDER_LABELS.get(used_prov, used_prov)} · {used_model}"
         return summary, source_label
+
+    # ------------------------------------------------------------------
+    # Meta blok ayristirma / uygulama
+    # ------------------------------------------------------------------
+    def _parse_meta_block(self, response_text):
+        """Persona cevabinin sonundaki ---META--- blogunu ayirir.
+        Doner: (kullaniciya gosterilecek temiz metin, meta dict)
+        """
+        if not response_text or META_BLOCK_MARKER not in response_text:
+            return (response_text or "").strip(), {}
+
+        clean_part, _, meta_part = response_text.partition(META_BLOCK_MARKER)
+        meta = {"acik": "", "cozuldu": "", "karar": ""}
+        for line in meta_part.splitlines():
+            m = META_LINE_RE.match(line.strip())
+            if not m:
+                continue
+            key_raw, value = m.group(1).upper(), m.group(2).strip()
+            if key_raw in ("ACIK", "AÇIK"):
+                meta["acik"] = value
+            elif key_raw in ("COZULDU", "ÇÖZÜLDÜ"):
+                meta["cozuldu"] = value
+            elif key_raw == "KARAR":
+                meta["karar"] = value
+        return clean_part.strip(), meta
+
+    def _apply_meta(self, meta, persona_name, current_round):
+        if not meta:
+            return
+
+        acik = meta.get("acik", "")
+        if acik and acik.lower() not in ("yok", "-", ""):
+            self._issue_counter += 1
+            self.issues.append({
+                "id": self._issue_counter,
+                "baslik": acik,
+                "durum": "AÇIK",
+                "acan": persona_name,
+                "tur": current_round,
+            })
+
+        cozuldu = meta.get("cozuldu", "")
+        if cozuldu and cozuldu.lower() not in ("yok", "-", ""):
+            cozuldu_lower = cozuldu.lower()
+            for issue in self.issues:
+                if issue["durum"] != "AÇIK":
+                    continue
+                if cozuldu_lower in issue["baslik"].lower() or issue["baslik"].lower() in cozuldu_lower:
+                    issue["durum"] = "ÇÖZÜLDÜ"
+
+        karar = meta.get("karar", "")
+        if karar and karar.lower() not in ("yok", "-", ""):
+            self._decision_counter += 1
+            self.decisions.append({
+                "id": self._decision_counter,
+                "ozet": karar,
+                "tur": current_round,
+            })
+
+    def _format_open_issues(self):
+        open_issues = [i for i in self.issues if i["durum"] == "AÇIK"]
+        if not open_issues:
+            return "Şu an açık konu yok."
+        return "\n".join(f"- (#{i['id']}, Tur {i['tur']}, {i['acan']}) {i['baslik']}" for i in open_issues)
+
+    def _format_decisions(self):
+        if not self.decisions:
+            return "Henüz alınmış bir karar yok."
+        return "\n".join(f"- (#{d['id']}, Tur {d['tur']}) {d['ozet']}" for d in self.decisions)
 
     # ------------------------------------------------------------------
     # Alt seviye: tek bir saglayiciya ham cagri
@@ -203,7 +293,7 @@ class DiscussionWorker(QThread):
     # ------------------------------------------------------------------
     # Persona konuşma turu
     # ------------------------------------------------------------------
-    def call_llm(self, persona, history, current_round):
+    def call_llm(self, persona, round_context, current_round):
         prov = persona["provider"]
         model = persona["model"]
         key = self.api_keys.get(prov, "")
@@ -217,24 +307,53 @@ class DiscussionWorker(QThread):
             f"Konu/Proje: {self.project}\n\n"
             f"Kurallar:\n"
             f"1. Kesinlikle rolüne sadık kal.\n"
-            f"2. Önceki konuşmaları dikkate alarak yapıcı ve doğrudan eleştiriler/katkılar sun.\n"
-            f"3. Gereksiz dolgu kelimelerden kaçın, net ve somut önerilerde bulun."
+            f"2. Açık konulara ve alınan kararlara göre yapıcı ve doğrudan katkı sun; "
+            f"zaten çözülmüş bir konuyu tekrar açma.\n"
+            f"3. Gereksiz dolgu kelimelerden kaçın, net ve somut önerilerde bulun.\n"
+            f"4. Senden sonra konuşacak katılımcıların ne diyeceğini henüz bilmiyorsun; "
+            f"sadece şu ana kadar konuşulanlara göre yorum yap.\n"
+            f"5. Cevabının en sonuna, kullanıcının GÖRMEYECEĞİ şu blok formatında bir özet ekle "
+            f"(başlıkları değiştirme, karşılığı yoksa 'yok' yaz):\n"
+            f"{META_BLOCK_MARKER}\n"
+            f"AÇIK: <yeni ya da hâlâ çözülmemiş bir konu, yoksa 'yok'>\n"
+            f"ÇÖZÜLDÜ: <daha önce açık olan bir konuyu çözdüysen kısa başlığı, yoksa 'yok'>\n"
+            f"KARAR: <somut bir karara vardıysan kısa özeti, yoksa 'yok'>"
         )
-        hist_str = "\n".join(history) if history else "Henüz tartışma yeni başlıyor. İlk fikirleri sen sun."
-        prompt = f"Şu ana kadarki tartışma geçmişi:\n{hist_str}\n\nLütfen {current_round}. tur için görüşünü belirt."
+
+        open_issues_str = self._format_open_issues()
+        decisions_str = self._format_decisions()
+        round_str = "\n".join(round_context) if round_context else "Bu turda henüz kimse konuşmadı, ilk sen konuşuyorsun."
+
+        prompt = (
+            f"Açık konular:\n{open_issues_str}\n\n"
+            f"Şu ana kadar alınan kararlar:\n{decisions_str}\n\n"
+            f"Bu turda ({current_round}. tur) şu ana kadar konuşulanlar:\n{round_str}\n\n"
+            f"Lütfen {current_round}. tur için görüşünü belirt."
+        )
 
         return self._call_provider_with_retry(prov, model, prompt, key, system_prompt=sys_prompt)
 
     # ------------------------------------------------------------------
     # Özet: istenirse belirli sağlayıcı/model, başarısız olursa otomatik yedek zincir
     # Donen deger: (ozet_metni, kullanilan_saglayici, kullanilan_model)
+    # Not: artik ham transkript degil, biriktirilmis issues/decisions
+    # kullaniliyor -> hem daha tutarli (yorum degil, veri) hem daha ucuz.
     # ------------------------------------------------------------------
-    def synthesize(self, history, provider=None, model=None):
-        hist_str = "\n".join(history)
+    def synthesize(self, provider=None, model=None):
+        open_issues_str = self._format_open_issues()
+        all_issues_str = "\n".join(
+            f"- (#{i['id']}, Tur {i['tur']}, {i['acan']}) [{i['durum']}] {i['baslik']}" for i in self.issues
+        ) or "Hiç konu açılmadı."
+        decisions_str = self._format_decisions()
+
         prompt = (
-            f"Aşağıdaki tartışma transkriptini incele ve profesyonel bir Özet çıkar.\n\n"
+            f"Aşağıda bir yapay zeka kurulu tartışmasından çıkarılmış yapılandırılmış veriler var. "
+            f"Bunlar tartışma sırasında round round biriktirildi; sen yeniden yorumlamana gerek yok, "
+            f"sadece düzgün bir rapora dök.\n\n"
             f"Konu: {self.project}\n\n"
-            f"Transkript:\n{hist_str}\n\n"
+            f"Alınan Kararlar:\n{decisions_str}\n\n"
+            f"Tüm Konular (durumlarıyla):\n{all_issues_str}\n\n"
+            f"Hâlâ Açık Olanlar:\n{open_issues_str}\n\n"
             f"Lütfen şu formatta Markdown raporu oluştur:\n"
             f"1. **Üzerinde Mutabık Kalınan Kararlar**\n"
             f"2. **Hâlâ Tartışmalı / Açık Kalan Noktalar**\n"

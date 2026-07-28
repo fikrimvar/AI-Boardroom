@@ -6,19 +6,35 @@ AI-Boardroom, PyQt6 kullanılarak geliştirilmiş, yerel bilgisayarınızda çal
 *   **Farklı Sağlayıcılar:** OpenAI, Google Gemini, Anthropic, Groq ve OpenRouter üzerinden modelleri bir araya getirin.
 *   **Rol (Persona) Şablonları:** Mimar, Eleştirmen, Ürün-UX, Sanatçı, Müzisyen gibi hazır alan şablonları.
 *   **Dinamik Sıralama:** Tartışma akışını yönetmek için katılımcıların konuşma sırasını kolayca değiştirin.
+*   **Açık Konu / Karar Takibi:** Tartışma ilerledikçe her turda açılan ve çözülen konular, alınan kararlar ayrı olarak tutulur; böylece round sayısı arttıkça modele gönderilen metin şişmez ve final özet, ham geçmişi yeniden yorumlamak yerine bu yapılandırılmış veriden üretilir.
 *   **Geçmiş ve Dışa Aktarma:** Önceki tartışma geçmişlerini tutma, inceleme, JSON veya Markdown olarak dışa aktarma ve toplu silme.
 *   **Asenkron Çalışma:** PyQt6 arayüzü donmadan arka planda çalışan AI çağrıları.
 
-## Kurulum
-1. Gerekli kütüphaneleri yükleyin:
-   ```bash
-   pip install PyQt6 google-genai anthropic openai
-   ```
-2. Uygulamayı çalıştırın:
-   ```bash
-   python main.py
-   ```
-3. "Ayarlar" sekmesine giderek kullanmak istediğiniz platformların API anahtarlarını girin ve kaydedin.
+## Kurulum (sanal ortam ile)
+
+Bağımlılıkları sisteme değil, projeye özel bir sanal ortama (venv) kurmanız önerilir.
+
+**Windows:**
+```bash
+python -m venv venv
+venv\Scripts\activate
+pip install -r requirements.txt
+python main.py
+```
+
+**macOS / Linux:**
+```bash
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+python main.py
+```
+
+Sanal ortamdan çıkmak için: `deactivate`
+
+Bir sonraki çalıştırmada sadece ilgili `activate` komutunu tekrar çalıştırmanız yeterli — `pip install` adımını tekrarlamanıza gerek yok.
+
+Uygulama açıldıktan sonra "Ayarlar" sekmesine giderek kullanmak istediğiniz platformların API anahtarlarını girin ve kaydedin.
 
 ---
 
