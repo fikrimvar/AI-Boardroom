@@ -1,0 +1,5 @@
+PyQt6>=6.6
+requests>=2.31
+openai>=1.30
+anthropic>=0.34
+google-genai>=0.1.0

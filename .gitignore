@@ -1,0 +1,24 @@
+# Sanal Ortam (Virtual Environment)
+venv/
+.venv/
+env/
+ENV/
+
+# Python Önbellek Dosyaları
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# API Anahtarları ve Çevresel Değişkenler
+.env
+
+# Çıktı ve Arşiv Dosyaları
+*.zip
+*.log
+
+# IDE ve İşletim Sistemi Dosyaları
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
