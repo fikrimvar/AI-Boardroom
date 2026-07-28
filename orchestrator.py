@@ -36,7 +36,7 @@ PROVIDER_LABELS = {
 # Bu sayede ekstra bir API cagrisi yapmadan (ayni cevabin icinde) Issue/Decision
 # takibi yapabiliyoruz.
 META_BLOCK_MARKER = "---META---"
-META_LINE_RE = re.compile(r"^(ACIK|AÇIK|COZULDU|ÇÖZÜLDÜ|KARAR)\s*:\s*(.*)$", re.IGNORECASE)
+META_LINE_RE = re.compile(r"^(ACIK|AÇIK|COZULDU|ÇÖZÜLDÜ|KARAR|IPTAL|İPTAL)\s*:\s*(.*)$", re.IGNORECASE)
 
 
 class DiscussionWorker(QThread):
@@ -163,7 +163,7 @@ class DiscussionWorker(QThread):
             return (response_text or "").strip(), {}
 
         clean_part, _, meta_part = response_text.partition(META_BLOCK_MARKER)
-        meta = {"acik": "", "cozuldu": "", "karar": ""}
+        meta = {"acik": "", "cozuldu": "", "karar": "", "iptal": ""}
         for line in meta_part.splitlines():
             m = META_LINE_RE.match(line.strip())
             if not m:
@@ -175,6 +175,8 @@ class DiscussionWorker(QThread):
                 meta["cozuldu"] = value
             elif key_raw == "KARAR":
                 meta["karar"] = value
+            elif key_raw in ("IPTAL", "İPTAL"):
+                meta["iptal"] = value
         return clean_part.strip(), meta
 
     def _apply_meta(self, meta, persona_name, current_round):
@@ -208,7 +210,17 @@ class DiscussionWorker(QThread):
                 "id": self._decision_counter,
                 "ozet": karar,
                 "tur": current_round,
+                "durum": "AKTİF",
             })
+
+        iptal = meta.get("iptal", "")
+        if iptal and iptal.lower() not in ("yok", "-", ""):
+            iptal_lower = iptal.lower()
+            for decision in self.decisions:
+                if decision["durum"] != "AKTİF":
+                    continue
+                if iptal_lower in decision["ozet"].lower() or decision["ozet"].lower() in iptal_lower:
+                    decision["durum"] = "İPTAL"
 
     def _format_open_issues(self):
         open_issues = [i for i in self.issues if i["durum"] == "AÇIK"]
@@ -217,9 +229,10 @@ class DiscussionWorker(QThread):
         return "\n".join(f"- (#{i['id']}, Tur {i['tur']}, {i['acan']}) {i['baslik']}" for i in open_issues)
 
     def _format_decisions(self):
-        if not self.decisions:
+        active_decisions = [d for d in self.decisions if d["durum"] == "AKTİF"]
+        if not active_decisions:
             return "Henüz alınmış bir karar yok."
-        return "\n".join(f"- (#{d['id']}, Tur {d['tur']}) {d['ozet']}" for d in self.decisions)
+        return "\n".join(f"- (#{d['id']}, Tur {d['tur']}) {d['ozet']}" for d in active_decisions)
 
     # ------------------------------------------------------------------
     # Alt seviye: tek bir saglayiciya ham cagri
@@ -315,12 +328,16 @@ class DiscussionWorker(QThread):
             f"5. Eğer bu cevabında, kendi açtığın veya başka birinin daha önce açtığı bir konuyu "
             f"somut ve yeterli şekilde yanıtladıysan, o konuyu AÇIK olarak tekrar işaretleme; "
             f"ÇÖZÜLDÜ olarak belirt.\n"
-            f"6. Cevabının en sonuna, kullanıcının GÖRMEYECEĞİ şu blok formatında bir özet ekle "
+            f"6. Eğer kullanıcı veya bir katılımcı, daha önce alınmış bir kararı iptal ettiyse ya da "
+            f"değiştirdiyse, o eski kararı asla tekrar önerme veya üzerine detay ekleme; bunun yerine "
+            f"iptal edildiğini META bloğunda İPTAL alanıyla belirt.\n"
+            f"7. Cevabının en sonuna, kullanıcının GÖRMEYECEĞİ şu blok formatında bir özet ekle "
             f"(başlıkları değiştirme, karşılığı yoksa 'yok' yaz):\n"
             f"{META_BLOCK_MARKER}\n"
             f"AÇIK: <yeni ya da hâlâ çözülmemiş bir konu, yoksa 'yok'>\n"
             f"ÇÖZÜLDÜ: <daha önce açık olan bir konuyu çözdüysen kısa başlığı, yoksa 'yok'>\n"
-            f"KARAR: <somut bir karara vardıysan kısa özeti, yoksa 'yok'>"
+            f"KARAR: <somut bir karara vardıysan kısa özeti, yoksa 'yok'>\n"
+            f"İPTAL: <daha önce alınmış ama artık geçersiz olan bir kararın kısa özeti, yoksa 'yok'>"
         )
 
         open_issues_str = self._format_open_issues()
