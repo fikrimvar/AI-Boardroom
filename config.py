@@ -14,6 +14,8 @@ DEFAULT_CONFIG = {
         "openrouter": ""
     },
     "rounds": 2,
+    "summary_provider": "gemini",
+    "summary_model": "",
     "personas": [
         {
             "name": "Mimar",
@@ -36,6 +38,7 @@ DEFAULT_CONFIG = {
     ]
 }
 
+
 def load_config():
     CONFIG_DIR.mkdir(parents=True, exist_ok=True)
     SESSIONS_DIR.mkdir(parents=True, exist_ok=True)
@@ -45,19 +48,24 @@ def load_config():
     try:
         with open(CONFIG_FILE, "r", encoding="utf-8") as f:
             data = json.load(f)
-            if "api_keys" not in data:
-                data["api_keys"] = DEFAULT_CONFIG["api_keys"]
-            else:
-                for k in DEFAULT_CONFIG["api_keys"]:
-                    if k not in data["api_keys"]:
-                        data["api_keys"][k] = ""
-            if "rounds" not in data:
-                data["rounds"] = 2
-            if "personas" not in data:
-                data["personas"] = DEFAULT_CONFIG["personas"]
-            return data
+        if "api_keys" not in data:
+            data["api_keys"] = DEFAULT_CONFIG["api_keys"]
+        else:
+            for k in DEFAULT_CONFIG["api_keys"]:
+                if k not in data["api_keys"]:
+                    data["api_keys"][k] = ""
+        if "rounds" not in data:
+            data["rounds"] = 2
+        if "summary_provider" not in data:
+            data["summary_provider"] = DEFAULT_CONFIG["summary_provider"]
+        if "summary_model" not in data:
+            data["summary_model"] = DEFAULT_CONFIG["summary_model"]
+        if "personas" not in data:
+            data["personas"] = DEFAULT_CONFIG["personas"]
+        return data
     except Exception:
         return DEFAULT_CONFIG
+
 
 def save_config(cfg):
     CONFIG_DIR.mkdir(parents=True, exist_ok=True)
