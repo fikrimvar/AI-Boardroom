@@ -178,6 +178,23 @@ class MainWindow(QMainWindow):
         tab = QWidget()
         layout = QVBoxLayout(tab)
         layout.setContentsMargins(8, 8, 8, 8)
+        
+        # Üst kısım: Özet Çıkaracak Model Seçimi
+        selection_layout = QHBoxLayout()
+        selection_layout.addWidget(QLabel("<b>Özet Çıkaracak Sağlayıcı:</b>"))
+        
+        self.summary_provider_combo = QComboBox()
+        for p in PROVIDER_OPTIONS:
+            self.summary_provider_combo.addItem(PROVIDER_LABELS[p], p)
+        selection_layout.addWidget(self.summary_provider_combo)
+        
+        selection_layout.addWidget(QLabel("Model:"))
+        self.summary_model_input = QLineEdit()
+        self.summary_model_input.setPlaceholderText("Boş bırakılırsa varsayılan kullanılır")
+        selection_layout.addWidget(self.summary_model_input)
+        
+        layout.addLayout(selection_layout)
+
         self.summary_view = QTextBrowser()
         layout.addWidget(self.summary_view)
         
@@ -547,9 +564,16 @@ class MainWindow(QMainWindow):
         if not self.worker or not self.worker.transcript:
             QMessageBox.warning(self, "Uyarı", "Yeniden özet çıkarılacak geçmiş bulunamadı.")
             return
+        
+        # Eski hataları temizle ve kullanıcıya çalışıyor bilgisi ver
+        self.summary_view.setMarkdown("### ⏳ Özet yeniden oluşturuluyor, lütfen bekleyin...")
         self.status_label.setText("Özet yeniden oluşturuluyor...")
+        
+        prov = self.summary_provider_combo.currentData()
+        model = self.summary_model_input.text().strip()
+        
         try:
-            summary = self.worker.generate_summary_only()
+            summary = self.worker.generate_summary_only(provider=prov, model=model)
             self.last_summary_md = summary
             self.summary_view.setMarkdown(summary)
             self.status_label.setText("Özet başarıyla oluşturuldu.")
@@ -559,7 +583,9 @@ class MainWindow(QMainWindow):
                 save_summary_md(self.session_dir, project, self.worker.transcript, summary)
                 self.load_history_list()
         except Exception as e:
+            self.summary_view.setMarkdown(f"### ❌ Hata Oluştu:\n```text\n{str(e)}\n```")
             QMessageBox.critical(self, "Hata", f"Özet oluşturulamadı:\n{str(e)}")
+            self.status_label.setText("Özet oluşturulamadı.")
 
     def on_finished(self, summary, transcript):
         self.last_summary_md = summary
@@ -592,4 +618,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

@@ -83,13 +83,35 @@ class DiscussionWorker(QThread):
         self.is_running = False
         self.is_paused = False
 
-    def generate_summary_only(self):
-        history_context = []
+    def generate_summary_only(self, provider, model=""):
+        """
+        Arayüzden gelen provider ve model tercihine göre 
+        sadece özet/plan raporunu yeniden üretir.
+        """
+        if not provider:
+            raise ValueError("Bir sağlayıcı (provider) seçilmelidir.")
+
+        # Konuşma geçmişini (transcript) metne dök
+        full_transcript = ""
         for entry in self.transcript:
-            speaker = entry["speaker"]
-            text = entry["text"]
-            history_context.append(f"{speaker}: {text}")
-        return self.synthesize(history_context)
+            rnd = f" (Tur {entry['round']})" if entry['round'] else ""
+            full_transcript += f"{entry['speaker']}{rnd}:\n{entry['text']}\n\n"
+
+        prompt = (
+            f"Aşağıdaki tartışma geçmişini ve kullanıcı girdilerini analiz et. "
+            f"Bu tartışmanın sonuçlarını, alınan kararları, çözülen sorunları ve "
+            f"yapılması gerekenler listesini içeren profesyonel, net bir Markdown özeti çıkar.\n\n"
+            f"--- TARTIŞMA GEÇMİŞİ ---\n{full_transcript}"
+        )
+
+        # Seçilen sağlayıcıya göre API çağrısı yap
+        api_key = self.api_keys.get(provider, "")
+        if not api_key:
+            raise ValueError(f"Seçilen '{provider}' için geçerli bir API anahtarı bulunamadı!")
+
+        # Burada seçilen provider'ın çağrı fonksiyonu tetiklenir
+        summary = call_ai_provider(provider, model, api_key, prompt)
+        return summary
 
     def call_llm(self, persona, history, current_round):
         prov = persona["provider"]
