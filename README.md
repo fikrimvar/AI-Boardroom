@@ -36,6 +36,14 @@ Bir sonraki çalıştırmada sadece ilgili `activate` komutunu tekrar çalışt�
 
 Uygulama açıldıktan sonra "Ayarlar" sekmesine giderek kullanmak istediğiniz platformların API anahtarlarını girin ve kaydedin.
 
+### Rol/Bakış Açısı alanı hem kimlik hem tondur
+
+"Rol/Bakış Açısı" alanı yalnızca katılımcının uzmanlığını değil, aynı zamanda cevaplarının tonunu ve uzunluğunu da belirler — çünkü bu metin doğrudan o katılımcının sistem promptuna gömülür. Ayrı bir "cevap uzunluğu" ayarı yoktur; kısa/öz cevap istiyorsanız bunu rol metnine ekleyin, örnek: *"Kısa ve öz cevap ver, 3 cümleyi geçme."*
+
+Ayrıca dikkat: "Şablon (Alan)" kutusundan bir şablon seçmek, İsim ve Rol alanlarını **uyarmadan siler** ve şablonun metniyle değiştirir — elle özenle yazdığınız bir rol metni varsa önce not alın.
+
+"Tur Sayısı" değerini artırmak her katılımcı için ek bir API çağrısı demektir; free-tier limitlerini normalden hızlı tüketebilir.
+
 ---
 
 ## 💡 Tavsiye: En Verimli Sıralama Stratejileri

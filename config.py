@@ -27,7 +27,7 @@ DEFAULT_CONFIG = {
             "name": "Eleştirmen",
             "role": "Kritik yaklaşım sergileyen, güvenlik açıklarını ve mantık hatalarını yakalayan uzman.",
             "provider": "groq",
-            "model": "llama-3.3-70b-versatile"
+            "model": "openai/gpt-oss-120b"
         },
         {
             "name": "Ürün-UX",

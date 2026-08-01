@@ -1,6 +1,7 @@
 import re
 import queue
 import time
+import traceback
 
 from PyQt6.QtCore import QThread, pyqtSignal
 
@@ -20,7 +21,7 @@ DEFAULT_MODELS = {
     "gemini": "gemini-2.0-flash",
     "anthropic": "claude-3-5-sonnet-20241022",
     "openai": "gpt-4o-mini",
-    "groq": "llama-3.3-70b-versatile",
+    "groq": "openai/gpt-oss-120b",
     "openrouter": "deepseek/deepseek-chat",
 }
 
@@ -136,7 +137,9 @@ class DiscussionWorker(QThread):
             source_label = f"{PROVIDER_LABELS.get(used_prov, used_prov)} · {used_model}"
             self.finished_all.emit(summary, self.transcript, source_label)
         except Exception as e:
-            self.error.emit(str(e))
+            print("[AI-Boardroom] Oturum hata ile durdu:")
+            traceback.print_exc()
+            self.error.emit(f"{e}\n\n(Tam ayrıntı için konsolu/terminali kontrol et.)")
 
     def resume(self):
         self.is_paused = False
@@ -211,6 +214,7 @@ class DiscussionWorker(QThread):
                 "ozet": karar,
                 "tur": current_round,
                 "durum": "AKTİF",
+                "acan": persona_name,
             })
 
         iptal = meta.get("iptal", "")
@@ -232,7 +236,10 @@ class DiscussionWorker(QThread):
         active_decisions = [d for d in self.decisions if d["durum"] == "AKTİF"]
         if not active_decisions:
             return "Henüz alınmış bir karar yok."
-        return "\n".join(f"- (#{d['id']}, Tur {d['tur']}) {d['ozet']}" for d in active_decisions)
+        return "\n".join(
+            f"- (#{d['id']}, Tur {d['tur']}, {d.get('acan', 'bilinmiyor')}) {d['ozet']}"
+            for d in active_decisions
+        )
 
     # ------------------------------------------------------------------
     # Alt seviye: tek bir saglayiciya ham cagri
@@ -285,12 +292,18 @@ class DiscussionWorker(QThread):
     # ------------------------------------------------------------------
     def _call_provider_with_retry(self, prov, model, prompt, key, system_prompt=None):
         last_err = None
+        resolved_model = model or DEFAULT_MODELS.get(prov, prov)
+        print(f"[AI-Boardroom] Çağrı: sağlayıcı={prov} model={resolved_model} "
+              f"anahtar_var_mı={bool(key)}")
         for attempt in range(MAX_RETRIES + 1):
             time.sleep(CALL_DELAY_SECONDS)
             try:
                 return self._raw_call(prov, model, prompt, key, system_prompt=system_prompt)
             except Exception as e:
                 last_err = e
+                print(f"[AI-Boardroom] HATA — sağlayıcı={prov} model={resolved_model} "
+                      f"deneme={attempt + 1}/{MAX_RETRIES + 1}")
+                traceback.print_exc()
                 err_text = str(e).lower()
                 is_rate_limit = any(marker in err_text for marker in RATE_LIMIT_MARKERS)
                 if is_rate_limit and attempt < MAX_RETRIES:
@@ -300,8 +313,10 @@ class DiscussionWorker(QThread):
                     )
                     time.sleep(RETRY_BACKOFF_SECONDS)
                     continue
-                raise
-        raise last_err
+                raise RuntimeError(
+                    f"[{prov} / {resolved_model}] {e}"
+                ) from e
+        raise RuntimeError(f"[{prov} / {resolved_model}] {last_err}") from last_err
 
     # ------------------------------------------------------------------
     # Persona konuşma turu
@@ -351,7 +366,10 @@ class DiscussionWorker(QThread):
             f"Lütfen {current_round}. tur için görüşünü belirt."
         )
 
-        return self._call_provider_with_retry(prov, model, prompt, key, system_prompt=sys_prompt)
+        try:
+            return self._call_provider_with_retry(prov, model, prompt, key, system_prompt=sys_prompt)
+        except Exception as e:
+            raise RuntimeError(f"Katılımcı '{name}' konuşurken hata: {e}") from e
 
     # ------------------------------------------------------------------
     # Özet: istenirse belirli sağlayıcı/model, başarısız olursa otomatik yedek zincir
@@ -374,6 +392,13 @@ class DiscussionWorker(QThread):
             f"Alınan Kararlar:\n{decisions_str}\n\n"
             f"Tüm Konular (durumlarıyla):\n{all_issues_str}\n\n"
             f"Hâlâ Açık Olanlar:\n{open_issues_str}\n\n"
+            f"ÖNEMLİ KURAL: Konuşma sırası sabittir, bu yüzden bir turda en son konuşan katılımcının "
+            f"görüşü otomatik olarak 'kazanan' sayılmamalı. 'Alınan Kararlar' listesinde aynı konuda "
+            f"birbiriyle ÇELİŞEN iki karar görürsen (örn. biri X diyor, biri aynı konuda X'in tam tersini "
+            f"söylüyor) ve bu çelişki başka bir kararla açıkça çözülmediyse, bunu 1. bölüme 'çözüldü' diye "
+            f"yazma — 2. bölüme (Hâlâ Tartışmalı / Açık Kalan Noktalar) 'X ile Y arasında cevaplanmamış "
+            f"bir çelişki var' diye NET şekilde işaretle. Son konuşanın itirazına kimse cevap vermediyse, "
+            f"bu henüz mutabakat değildir.\n\n"
             f"Lütfen şu formatta Markdown raporu oluştur:\n"
             f"1. **Üzerinde Mutabık Kalınan Kararlar**\n"
             f"2. **Hâlâ Tartışmalı / Açık Kalan Noktalar**\n"

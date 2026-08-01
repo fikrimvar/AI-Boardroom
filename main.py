@@ -52,9 +52,17 @@ class PersonaRow(QFrame):
         self.template_combo = QComboBox()
         self.template_combo.addItems(list(PERSONA_TEMPLATES.keys()))
         self.template_combo.currentIndexChanged.connect(self.on_template_changed)
+        self.template_combo.setToolTip(
+            "Dikkat: bir şablon seçmek İsim ve Rol/Bakış Açısı alanlarını\n"
+            "uyarmadan siler ve şablonun metniyle değiştirir."
+        )
 
         self.name_input = QLineEdit(persona.get("name", ""))
         self.role_input = QLineEdit(persona.get("role", ""))
+        self.role_input.setToolTip(
+            "Bu alan hem katılımcının kimliğini hem de cevap uzunluğunu/tonunu belirler.\n"
+            "Örnek: 'Kısa ve öz cevap ver, 3 cümleyi geçme.'"
+        )
         self.provider_combo = QComboBox()
         for p in PROVIDER_OPTIONS:
             self.provider_combo.addItem(PROVIDER_LABELS[p], p)
@@ -249,6 +257,10 @@ class MainWindow(QMainWindow):
         self.rounds_spin = QSpinBox()
         self.rounds_spin.setRange(1, 10)
         self.rounds_spin.setValue(self.cfg.get("rounds", 2))
+        self.rounds_spin.setToolTip(
+            "Her ek tur, her katılımcı için ayrı bir API çağrısı demektir.\n"
+            "Free-tier limitlerini hızlandırabilir."
+        )
         general_layout.addWidget(self.rounds_spin)
         general_layout.addStretch()
         layout.addWidget(general_group)
