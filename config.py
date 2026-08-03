@@ -7,11 +7,7 @@ SESSIONS_DIR = CONFIG_DIR / "sessions"
 
 DEFAULT_CONFIG = {
     "api_keys": {
-        "anthropic": "",
-        "openai": "",
-        "gemini": "",
-        "groq": "",
-        "openrouter": ""
+        "anthropic": "", "openai": "", "gemini": "", "groq": "", "openrouter": ""
     },
     "rounds": 2,
     "summary_provider": "gemini",
@@ -19,25 +15,20 @@ DEFAULT_CONFIG = {
     "personas": [
         {
             "name": "Mimar",
-            "role": "Sistem mimarı, performans ve veritabanı uzmanı. Sağlam altyapı tasarlar.",
+            "role": "Sistem mimarı, performans ve veritabanı uzmanı.",
             "provider": "gemini",
-            "model": "gemini-2.5-flash"
+            "model": "gemini-2.0-flash",
+            "sees_context": True
         },
         {
             "name": "Eleştirmen",
-            "role": "Kritik yaklaşım sergileyen, güvenlik açıklarını ve mantık hatalarını yakalayan uzman.",
+            "role": "Güvenlik açıklarını ve mantık hatalarını yakalayan uzman.",
             "provider": "groq",
-            "model": "openai/gpt-oss-120b"
-        },
-        {
-            "name": "Ürün-UX",
-            "role": "Kullanıcı deneyimi, akış hızı ve işlevsellik odaklı ürün yöneticisi.",
-            "provider": "openrouter",
-            "model": "deepseek/deepseek-chat"
+            "model": "openai/gpt-oss-120b",
+            "sees_context": False
         }
     ]
 }
-
 
 def load_config():
     CONFIG_DIR.mkdir(parents=True, exist_ok=True)
@@ -48,26 +39,13 @@ def load_config():
     try:
         with open(CONFIG_FILE, "r", encoding="utf-8") as f:
             data = json.load(f)
-        if "api_keys" not in data:
-            data["api_keys"] = DEFAULT_CONFIG["api_keys"]
-        else:
-            for k in DEFAULT_CONFIG["api_keys"]:
-                if k not in data["api_keys"]:
-                    data["api_keys"][k] = ""
-        if "rounds" not in data:
-            data["rounds"] = 2
-        if "summary_provider" not in data:
-            data["summary_provider"] = DEFAULT_CONFIG["summary_provider"]
-        if "summary_model" not in data:
-            data["summary_model"] = DEFAULT_CONFIG["summary_model"]
-        if "personas" not in data:
-            data["personas"] = DEFAULT_CONFIG["personas"]
+        # Eksik anahtarları tamamla
+        if "api_keys" not in data: data["api_keys"] = DEFAULT_CONFIG["api_keys"]
+        if "personas" not in data: data["personas"] = DEFAULT_CONFIG["personas"]
         return data
     except Exception:
         return DEFAULT_CONFIG
 
-
 def save_config(cfg):
-    CONFIG_DIR.mkdir(parents=True, exist_ok=True)
     with open(CONFIG_FILE, "w", encoding="utf-8") as f:
         json.dump(cfg, f, ensure_ascii=False, indent=4)
