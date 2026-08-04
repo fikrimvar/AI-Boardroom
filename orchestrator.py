@@ -47,7 +47,10 @@ REFUSAL_MARKERS = [
 def _is_refusal(text):
     if not text:
         return True
-    low = text.strip().lower()
+    # Modeller bazen eğik/tipografik kesme işareti (’ U+2019) kullanıyor,
+    # REFUSAL_MARKERS düz kesme işaretiyle (') yazılmış - eşleşmeden önce
+    # normalize et, yoksa "I'm sorry" ile "I'm sorry" aynı metin sayılmaz.
+    low = text.strip().lower().replace("\u2019", "'").replace("\u2018", "'")
     # Kısa bir metin (< 200 karakter) + bilinen bir ret kalıbı içeriyorsa
     # ret say. Uzun, gerçek bir cevabın içinde geçen tesadüfi bir eşleşmeyi
     # (örn. bir alıntı) ret sanmamak için uzunluk sınırı konuldu.
